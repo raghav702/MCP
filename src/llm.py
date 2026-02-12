@@ -2,7 +2,8 @@
 import os
 from langchain_openai import ChatOpenAI
 from langchain_anthropic import ChatAnthropic
-from src.config import LLM_PROVIDER, MODEL_NAME, OPENAI_API_KEY, ANTHROPIC_API_KEY
+from langchain_google_genai import ChatGoogleGenerativeAI
+from src.config import LLM_PROVIDER, MODEL_NAME, OPENAI_API_KEY, ANTHROPIC_API_KEY, GOOGLE_API_KEY
 
 
 def get_llm(temperature: float = 0.7):
@@ -23,6 +24,14 @@ def get_llm(temperature: float = 0.7):
             model=MODEL_NAME,
             temperature=temperature,
             api_key=ANTHROPIC_API_KEY
+        )
+    elif LLM_PROVIDER == "google":
+        if not GOOGLE_API_KEY:
+            raise ValueError("GOOGLE_API_KEY not found in environment variables")
+        return ChatGoogleGenerativeAI(
+            model=MODEL_NAME,
+            temperature=temperature,
+            google_api_key=GOOGLE_API_KEY
         )
     else:
         raise ValueError(f"Unknown LLM provider: {LLM_PROVIDER}")

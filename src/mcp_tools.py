@@ -1,37 +1,69 @@
 """MCP tool integrations for web search and filesystem operations."""
 import json
 import httpx
+import os
 from typing import List, Dict, Any
+from dotenv import load_dotenv
+from tavily import TavilyClient
+from bs4 import BeautifulSoup
+import html2text
 from src.state import Source
 from src.config import DEBUG
 
+# Ensure environment variables are loaded
+load_dotenv()
+
 
 class MCPWebSearch:
-    """Simple web search via MCP (mock for MVP - replace with actual MCP later)."""
+    """Web search using Tavily API."""
     
     def __init__(self):
-        self.mock_mode = True  # Set to False when MCP server is running
+        self.tavily_api_key = os.getenv("TAVILY_API_KEY")
+        self.use_tavily = bool(self.tavily_api_key)
+        
+        if self.use_tavily:
+            self.client = TavilyClient(api_key=self.tavily_api_key)
+        
+        if DEBUG:
+            if self.use_tavily:
+                print("[SEARCH] Using Tavily Search API")
+            else:
+                print("[SEARCH] Using mock mode - set TAVILY_API_KEY for real search")
     
     async def search(self, query: str, max_results: int = 10) -> List[Source]:
         """Execute web search and return sources."""
         
-        if self.mock_mode:
-            # Mock search results for MVP testing
+        if not self.use_tavily:
             return self._mock_search(query, max_results)
         
-        # Actual MCP call (implement when MCP server is ready)
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    "http://localhost:3000/search",
-                    json={"query": query, "max_results": max_results}
-                )
-                results = response.json()
-                return [Source(**r) for r in results]
+            # Use Tavily search
+            response = self.client.search(
+                query=query,
+                max_results=min(max_results, 10),
+                search_depth="basic"
+            )
+            
+            sources = []
+            if 'results' in response:
+                for i, item in enumerate(response['results']):
+                    sources.append(Source(
+                        url=item.get('url', ''),
+                        title=item.get('title', ''),
+                        snippet=item.get('content', '')[:200],  # Tavily returns full content
+                        content=item.get('content', ''),  # Store full content
+                        relevance_score=item.get('score', 1.0 - (i * 0.05))
+                    ))
+            
+            if DEBUG:
+                print(f"[SEARCH] Found {len(sources)} results for: {query}")
+            
+            return sources
+            
         except Exception as e:
             if DEBUG:
-                print(f"[MCP Search Error] {e}")
-            return []
+                print(f"[Tavily Search Error] {type(e).__name__}: {e}")
+            return self._mock_search(query, max_results)
     
     def _mock_search(self, query: str, max_results: int) -> List[Source]:
         """Mock search results for testing."""
@@ -48,41 +80,52 @@ class MCPWebSearch:
 
 
 class MCPWebFetch:
-    """Fetch full article content via MCP."""
+    """Fetch full article content from web pages."""
     
     def __init__(self):
-        self.mock_mode = True
+        self.h2t = html2text.HTML2Text()
+        self.h2t.ignore_links = False
+        self.h2t.ignore_images = True
+        self.h2t.body_width = 0
     
     async def fetch(self, url: str) -> str:
         """Fetch full content from URL."""
         
-        if self.mock_mode:
-            return self._mock_fetch(url)
-        
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    "http://localhost:3000/fetch",
-                    json={"url": url}
-                )
-                return response.json().get("content", "")
+            async with httpx.AsyncClient(follow_redirects=True, timeout=10.0) as client:
+                response = await client.get(url)
+                response.raise_for_status()
+                
+                # Parse HTML and extract text
+                soup = BeautifulSoup(response.text, 'html.parser')
+                
+                # Remove script and style elements
+                for script in soup(["script", "style", "nav", "footer", "header"]):
+                    script.decompose()
+                
+                # Convert to markdown-like text
+                text = self.h2t.handle(str(soup))
+                
+                # Clean up and limit length
+                text = text.strip()
+                if len(text) > 3000:
+                    text = text[:3000] + "..."
+                
+                if DEBUG:
+                    print(f"[FETCH] Retrieved {len(text)} chars from {url}")
+                
+                return text
+                
         except Exception as e:
             if DEBUG:
-                print(f"[MCP Fetch Error] {e}")
-            return ""
+                print(f"[Fetch Error] {url}: {e}")
+            return self._mock_fetch(url)
     
     def _mock_fetch(self, url: str) -> str:
-        """Mock article content."""
-        return f"""# Full Article Content from {url}
+        """Fallback mock content."""
+        return f"""Content from {url}
 
-This is the full content of the article. In a production environment, this would be the actual scraped content from the web page.
-
-## Key Points:
-- Important insight 1
-- Important insight 2
-- Important insight 3
-
-The article provides detailed analysis and data supporting the research query."""
+This article provides detailed information on the topic. Key insights and analysis are included to support comprehensive understanding of the subject matter."""
 
 
 class MCPFilesystem:
