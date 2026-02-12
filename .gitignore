@@ -9,9 +9,6 @@ venv/
 ENV/
 .venv
 
-# Documentation
-*.md
-
 # Environment
 .env
 .streamlit/secrets.toml

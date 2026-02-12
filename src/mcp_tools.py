@@ -13,6 +13,15 @@ from src.config import DEBUG
 # Ensure environment variables are loaded
 load_dotenv()
 
+# Try to load from Streamlit secrets if available (for deployment)
+try:
+    import streamlit as st
+    if hasattr(st, 'secrets') and 'TAVILY_API_KEY' in st.secrets:
+        if not os.getenv('TAVILY_API_KEY'):
+            os.environ['TAVILY_API_KEY'] = st.secrets['TAVILY_API_KEY']
+except:
+    pass
+
 
 class MCPWebSearch:
     """Web search using Tavily API."""
